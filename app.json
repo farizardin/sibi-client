@@ -1,0 +1,16 @@
+{
+  "expo": {
+    "name": "SIBIClient",
+    "slug": "SIBIClient",
+    "version": "1.0.0",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "d3e8c4a4-8a4b-4358-b7c9-dfb53ffd04b6"
+      }
+    }
+  },
+  "name": "SIBIClient"
+}
