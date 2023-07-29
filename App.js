@@ -2,19 +2,14 @@ import { StyleSheet, Text, View, Button, SafeAreaView, TouchableOpacity, Dimensi
 import { useEffect, useState, useRef } from 'react';
 import { Camera, CameraType } from 'expo-camera';
 import { Video } from 'expo-av';
-import { shareAsync } from 'expo-sharing';
 import { AntDesign } from '@expo/vector-icons';
 import * as MediaLibrary from 'expo-media-library';
 import axios from 'axios';
 import LoadingOverlay from './LoadingOverlay';
 // import { Modal } from 'react-native-modal';
 import { Icon } from 'react-native-elements';
-import { FloatingAction } from 'react-native-floating-action';
-
-
 
 // const SERVER_URL = 'http://192.168.0.37:1234/recognize/api';
-
 export default function App() {
   let cameraRef = useRef();
   const [type, setType] = useState(CameraType.back);
@@ -23,30 +18,41 @@ export default function App() {
   const [hasMediaLibraryPermission, setHasMediaLibraryPermission] = useState();
   const [isRecording, setIsRecording] = useState(false);
   const [video, setVideo] = useState();
-
+  const { height, width } = Dimensions.get('window');
   const [imagePadding, setImagePadding] = useState(0);
   const [ratio, setRatio] = useState('4:3');  // default is 4:3
-  const { height, width } = Dimensions.get('window');
   const screenRatio = height / width;
   const [isRatioSet, setIsRatioSet] =  useState(false)
   const [isActive, setIsActive] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [modalVisible, setModalVisible] = useState(false);
+  const [modalErrorVisible, setErrorModalVisible] = useState(false);
   const [modalSettingVisible, setSettingModalVisible] = useState(false);
-  const [predicted, setPredicted] = useState();  // default is 4:3
-  const [SERVER_URL, setInputValue] = useState('http://192.168.0.37:1234/recognize/api');
+  const [predicted, setPredicted] = useState();
+  const [normalizationElapsedTime, setNormalizationElapsedTime] = useState();
+  const [predictionElapsedTime, setPredictionElapsedTime] = useState();
+  const [totalProcessElapsedTime, setTotalProcessElapsedTime] = useState();
+  const [requestElapsedTime, setRequestElapsedTime] = useState();
+  const [errorMessage, setErrorMessage] = useState();
+  const [SERVER_URL, setInputValue] = useState('http://192.168.54.78:1234/recognize/api');
   const [isLoading, setIsLoading] = useState(false);
+  const [videoDuration, setVideoDuration] = useState();
   const actions = [
     { text: 'Capture', icon: <Icon name="camera" size={20} color="white" />, name: 'capture' },
     // Add more buttons as needed
   ];
+  const handleMountError = (error) => {
+    console.log('Camera mount error:', error);
+    // Handle the error in an appropriate way
+  };
   useEffect(() => {
     (async () => {
       const cameraPermission = await Camera.requestCameraPermissionsAsync();
       const mediaLibraryPermission = await MediaLibrary.requestPermissionsAsync();
-
+      const micStatus = await Camera.requestMicrophonePermissionsAsync();
       setHasCameraPermission(cameraPermission.status === "granted");
       setHasMediaLibraryPermission(mediaLibraryPermission.status === "granted");
+      setHasMicrophonePermission(micStatus.status === "granted");
     })();
   }, []);
 
@@ -54,7 +60,6 @@ export default function App() {
     let timer = null;
     if(isActive){
       timer = setInterval(() => {
-        console.log(seconds);
         setSeconds((seconds) => seconds + 1);
       }, 1000);
     }
@@ -102,7 +107,6 @@ export default function App() {
       // Set a flag so we don't do this 
       // calculation each time the screen refreshes
       setIsRatioSet(true);
-      console.log(screenRatio)
     }
   };
 
@@ -128,8 +132,6 @@ export default function App() {
       mute: false
     };
 
-    // console.log(imagePadding)
-
     cameraRef.current.recordAsync(options).then((recordedVideo) => {
       setVideo(recordedVideo);
       setIsRecording(false);
@@ -147,6 +149,31 @@ export default function App() {
     setInputValue(text);
   };
 
+  function error_handler(error){
+    setIsLoading(false);
+    if (error.response) {
+      // The request was made and the server responded with a status code outside the range of 2xx
+      if (error.response.status === 422) {
+        // Handle specific 422 error
+        var message = error.response.data.error.message;
+      } else if (error.response.status === 500) {
+        // Handle specific 500 error
+        var message = error.response.data.error.message;
+      } else {
+        // Handle other error statuses
+        var message = error.response.status;
+      }
+    } else if (error.request) {
+      // The request was made but no response was received
+      var message = error.request._response;
+    } else {
+      // Something happened in setting up the request that triggered an Error
+      var message = error.error.message;
+    }
+    setErrorMessage(message);
+    setErrorModalVisible(true)
+  }
+
   const uploadVideo = async () => {
     if (video) {
       const formData = new FormData();
@@ -155,19 +182,31 @@ export default function App() {
         type: 'video/mp4',
         name: 'video.mp4',
       });
-      console.log(SERVER_URL, formData)
       var headers = {
         headers: {
           'Content-Type': 'multipart/form-data'
         }
-    }
-    setIsLoading(true);
-    var response = await axios.post(SERVER_URL, formData, headers);
-    console.log(response.data.data.predicted_word);
-    setIsLoading(false);
-    setModalVisible(true);
-    setPredicted(response.data.data.predicted_word)
-      // predicted = response.data.predicted_word;
+      }
+      setIsLoading(true);
+
+      try {
+        // const videoUri = video.uri
+        var request_start_at = performance.now();
+        var response = await axios.post(SERVER_URL, formData, headers);
+        var request_end_at = performance.now();
+
+        var request_elapsed_time = ((request_end_at - request_start_at) / 1000).toFixed(2);
+        setIsLoading(false);
+        setModalVisible(true);
+        setPredicted(response.data.data.predicted);
+        setNormalizationElapsedTime(response.data.data.normalization_elapsed_time);
+        setPredictionElapsedTime(response.data.data.prediction_elapsed_time);
+        setTotalProcessElapsedTime(response.data.data.total_process_elapsed_time);
+        setRequestElapsedTime(request_elapsed_time);
+        setVideoDuration(response.data.data.video_duration);
+      } catch (error) {
+        error_handler(error);
+      }
     }
   };
 
@@ -176,12 +215,6 @@ export default function App() {
   }
 
   if (video) {
-    let shareVideo = () => {
-      shareAsync(video.uri).then(() => {
-        setVideo(undefined);
-      });
-    };
-
     let saveVideo = () => {
       MediaLibrary.saveToLibraryAsync(video.uri).then(() => {
         setVideo(undefined);
@@ -189,8 +222,8 @@ export default function App() {
     };
 
     return (
-      <View style={styles.container}>
-        <View style={styles.video}>
+      <View style={styles.videoContainer} onMountError={handleMountError}>
+        <View style={styles.video} onMountError={handleMountError}>
           <Video
             style={styles.video}
             source={{uri: video.uri}}
@@ -198,9 +231,16 @@ export default function App() {
             resizeMode='contain'
             isLooping
           />
-          <Button title="Recognize" onPress={uploadVideo} />
-          {hasMediaLibraryPermission ? <Button title="Save" onPress={saveVideo} /> : undefined}
-          <Button color="darkred" title="Discard" onPress={() => setVideo(undefined)} />
+        </View>
+        <View style={styles.videoNavigation}>
+          <Button title="Unggah dan Kenali" onPress={uploadVideo} />
+          <Button color="darkred" title="Batal" onPress={() => setVideo(undefined)} />
+          {/* <TouchableOpacity  style={styles.videoButtonNavigation} onPress={uploadVideo}>
+            <AntDesign name="upload" size={24} color="#fff" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.videoButtonNavigation} onPress={uploadVideo}>
+            <AntDesign name="close" size={24} color="#fff" />
+          </TouchableOpacity> */}
         </View>
         <LoadingOverlay isVisible={isLoading} />
         <Modal
@@ -209,11 +249,40 @@ export default function App() {
           visible={modalVisible}
           onRequestClose={() => setModalVisible(false)}
         >
-          <View style={styles.modalContainer}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalText}>Prediksi kata atau kalimat</Text>
-              <Text>{predicted}</Text>
-              <Button title="Close" onPress={() => setModalVisible(false)} />
+          <View style={styles.modalContainer} onMountError={handleMountError}>
+            <View style={styles.modalContent} onMountError={handleMountError}>
+              <Text style={styles.modalText}>Hasil</Text>
+              <Text style={styles.modalContentTextHeader}>Prediksi Kata/Kalimat:</Text>
+              <Text style={styles.modalContentText}>{predicted}</Text>
+              <Text style={styles.modalContentTextHeader}>Durasi Video:</Text>
+              <Text style={styles.modalContentText}>{videoDuration} Detik</Text>
+              <Text style={styles.modalContentTextHeader}>Durasi Normalisasi:</Text>
+              <Text style={styles.modalContentText}>{normalizationElapsedTime} Detik</Text>
+              <Text style={styles.modalContentTextHeader}>Durasi Prediksi:</Text>
+              <Text style={styles.modalContentText}>{predictionElapsedTime} Detik</Text>
+              <Text style={styles.modalContentTextHeader}>Total Durasi Pemrosesan:</Text>
+              <Text style={styles.modalContentText}>{totalProcessElapsedTime} Detik</Text>
+              <Text style={styles.modalContentTextHeader}>Durasi Permintaan:</Text>
+              <Text style={styles.modalContentText}>{requestElapsedTime} Detik</Text>
+              <Button title="Tutup" onPress={() => setModalVisible(false)} />
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
+          animationType="slide"
+          transparent={true}
+          visible={modalErrorVisible}
+          onRequestClose={() => setErrorModalVisible(false)}
+        >
+          <View style={styles.modalContainer} onMountError={handleMountError}>
+            <View style={styles.modalContent} onMountError={handleMountError}>
+              <Text style={styles.modalText}>Terjadi Kesalahan</Text>
+              <Text style={{ fontSize: 17 }}>
+                <Text style={{ fontWeight: 'bold' }}>Pesan : </Text>
+                <Text>{errorMessage}</Text>
+              </Text>
+              <Button title="Tutup" onPress={() => setErrorModalVisible(false)} />
             </View>
           </View>
         </Modal>
@@ -222,36 +291,32 @@ export default function App() {
   }
 
   return (
-    <View style={styles.container}>
-      <TouchableOpacity  style={styles.floatingButton} onPress={() => setSettingModalVisible(true)}>
-        <AntDesign name="setting" size={24} color="#fff" />
-      </TouchableOpacity>
-      {/* <FloatingAction
-        actions={actions}
-        color="#2F54EB"  // Set button color
-        overlayColor="rgba(0, 0, 0, 0.5)"  // Set button overlay color
-      /> */}
+    <View style={styles.container} onMountError={handleMountError}>
       <Camera
         onCameraReady={setCameraReady}
+        onMountError={handleMountError}
         type={type}
         ratio={ratio}
         style={[styles.container, { marginBottom: imagePadding * 4}]}
         ref={cameraRef}
       />
-      <View style={[styles.controls, {marginBottom: imagePadding }]}>
+      <View style={[styles.controls, {marginBottom: imagePadding }]} onMountError={handleMountError}>
       <Text style={styles.buttonText}>
         {seconds}
       </Text>
         <TouchableOpacity style={styles.button} onPress={toggleCameraType}>
-            <Text style={styles.text}>Flip Camera</Text>
+            <Text style={styles.text}>Pindah Kamera</Text>
           </TouchableOpacity>
         <TouchableOpacity
           style={styles.button}
           onPress={isRecording ? stopRecording : recordVideo}
         >
           <Text style={styles.buttonText}>
-            {isRecording ? "Stop Recording" : "Record Video"}
+            {isRecording ? "Stop Perekaman" : "Rekam Video"}
           </Text>
+        </TouchableOpacity>
+        <TouchableOpacity  style={styles.floatingButton} onPress={() => setSettingModalVisible(true)}>
+          <AntDesign name="setting" size={24} color="#fff" />
         </TouchableOpacity>
         <Modal
           animationType="slide"
@@ -259,8 +324,8 @@ export default function App() {
           visible={modalSettingVisible}
           onRequestClose={() => setModalVisible(false)}
         >
-          <View style={styles.modalContainer}>
-            <View style={styles.modalContent}>
+          <View style={styles.modalContainer} onMountError={handleMountError}>
+            <View style={styles.modalContent} onMountError={handleMountError}>
               <Text style={styles.modalText}>Pengaturan</Text>
               <TextInput
                 style={styles.inputField}
@@ -268,7 +333,7 @@ export default function App() {
                 value={SERVER_URL}
                 onChangeText={handleInputChange}
               />
-              <Button style={{marginTop: 'auto'}} title="Close" onPress={() => setSettingModalVisible(false)} />
+              <Button style={{marginTop: 'auto'}} title="Tutup" onPress={() => setSettingModalVisible(false)} />
             </View>
           </View>
         </Modal>
@@ -309,10 +374,12 @@ const styles = StyleSheet.create({
   },
   video: {
     flex: 1,
+    width: '100%',
+    height: '100%',
   },
   floatingButton: {
     position: 'absolute',
-    bottom: 40,
+    bottom: 10,
     right: 20,
     width: 60,
     height: 60,
@@ -335,8 +402,40 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   modalText: {
-    fontSize: 18,
+    fontSize: 25,
     fontWeight: 'bold',
+  },
+  modalContentText: {
+    fontSize: 17,
     marginBottom: 10,
   },
+  modalContentTextHeader: {
+    fontSize: 17,
+    fontWeight: 'bold',
+  },
+  videoContainer: {
+    flex: 1,
+    backgroundColor: 'black',
+  },
+  videoNavigation: {
+    position: 'absolute',
+    bottom: '12%',
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 0,
+    justifyContent: 'space-between',
+    marginHorizontal: 50,
+  },
+  videoButtonNavigation: {
+    borderRadius: 30,
+    backgroundColor: '#007AFF',
+    borderRadius: 30,
+    width: 60,
+    height: 60,
+    justifyContent: 'center',
+    alignItems: 'center',
+  }
 });

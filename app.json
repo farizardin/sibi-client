@@ -1,16 +1,36 @@
 {
   "expo": {
-    "name": "SIBIClient",
-    "slug": "SIBIClient",
+    "name": "SIBIAndroid",
+    "slug": "SIBIAndroid",
     "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
     "assetBundlePatterns": [
       "**/*"
     ],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.rizurin.SIBIClient",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
     "extra": {
       "eas": {
-        "projectId": "d3e8c4a4-8a4b-4358-b7c9-dfb53ffd04b6"
+        "projectId": "e0e9d5ff-f143-4492-9a50-0ebaadcf2bb0"
       }
     }
-  },
-  "name": "SIBIClient"
+  }
 }
